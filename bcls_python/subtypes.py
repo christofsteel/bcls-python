@@ -1,10 +1,19 @@
 from collections import deque
-from collections.abc import Hashable
+from collections.abc import Hashable, Iterable
+from itertools import chain
 from typing import Generic, TypeVar
 
 from .types import Arrow, Constructor, Intersection, Product, Type
 
 T = TypeVar("T", bound=Hashable, covariant=True)
+
+def flatten_gen(subtypes):
+    for subtype in subtypes:
+        if isinstance(subtype, Intersection):
+            for elem in subtype.inner:
+                yield elem
+        else:
+            yield subtype
 
 
 class Subtypes(Generic[T]):
@@ -13,56 +22,51 @@ class Subtypes(Generic[T]):
             self._reflexive_closure(environment)
         )
 
-    def _check_subtype_rec(self, subtypes: deque[Type[T]], supertype: Type[T]) -> bool:
+    def _check_subtype_rec(self, subtypes: Iterable[Type[T]], supertype: Type[T]) -> bool:
         if supertype.is_omega:
             return True
+        # st = chain(subtype.inner if isinstance(subtype, Intersection) else [subtype] for subtype in subtypes)
+        st = flatten_gen(subtypes)
+        # st = deque()
+        # for subtype in subtypes:
+        #     if isinstance(subtype, Intersection):
+        #         st.extend(subtype.inner)
+        #     else:
+        #         st.append(subtype)
         match supertype:
             case Constructor(name2, arg2):
-                casted_constr: deque[Type[T]] = deque()
-                while subtypes:
-                    match subtypes.pop():
-                        case Constructor(name1, arg1):
-                            if name2 == name1 or name2 in self.environment.get(
-                                name1, {}
-                            ):
-                                casted_constr.append(arg1)
-                        case Intersection(l, r):
-                            subtypes.extend((l, r))
+                casted_constr: Iterable[Type[T]] = list(map(lambda s:s.arg, filter(lambda subtype: isinstance(subtype, Constructor) and (subtype.name == name2 or (subtype.name in self.environment and name2 in self.environment[subtype.name])), st)))
+                # casted_constr: deque[Type[T]] = deque()
+                # for subtype in st:
+                #     if isinstance(subtype, Constructor) and (subtype.name == name2 or (subtype.name in self.environment and name2 in self.environment[subtype.name])):
+                #         casted_constr.append(subtype.arg)
+
                 return len(casted_constr) != 0 and self._check_subtype_rec(
                     casted_constr, arg2
                 )
             case Arrow(src2, tgt2):
                 casted_arr: deque[Type[T]] = deque()
-                while subtypes:
-                    match subtypes.pop():
-                        case Arrow(src1, tgt1):
-                            if self._check_subtype_rec(deque((src2,)), src1):
-                                casted_arr.append(tgt1)
-                        case Intersection(l, r):
-                            subtypes.extend((l, r))
+                for subtype in st:
+                    if isinstance(subtype, Arrow) and self._check_subtype_rec(deque(src2), subtype.source):
+                        casted_arr.append(subtype.target)
                 return len(casted_arr) != 0 and self._check_subtype_rec(
                     casted_arr, tgt2
                 )
             case Product(l2, r2):
                 casted_l: deque[Type[T]] = deque()
                 casted_r: deque[Type[T]] = deque()
-                while subtypes:
-                    match subtypes.pop():
-                        case Product(l1, r1):
-                            casted_l.append(l1)
-                            casted_r.append(r1)
-                        case Intersection(l, r):
-                            subtypes.extend((l, r))
+                for subtype in st:
+                    if isinstance(subtype, Product):
+                        casted_l.append(subtype.left)
+                        casted_r.append(subtype.right)
                 return (
                     len(casted_l) != 0
                     and len(casted_r) != 0
                     and self._check_subtype_rec(casted_l, l2)
                     and self._check_subtype_rec(casted_r, r2)
                 )
-            case Intersection(l, r):
-                return self._check_subtype_rec(subtypes, l) and self._check_subtype_rec(
-                    subtypes, r
-                )
+            case Intersection(inner):
+                return all(self._check_subtype_rec(subtypes, subformula) for subformula in inner)
             case _:
                 raise TypeError(f"Unsupported type in check_subtype: {supertype}")
 

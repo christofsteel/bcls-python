@@ -62,8 +62,8 @@ class FiniteCombinatoryLogic(Generic[T]):
                 match tys.pop():
                     case Arrow(src, tgt) if not tgt.is_omega:
                         yield (src, tgt)
-                    case Intersection(sigma, tau):
-                        tys.extend((sigma, tau))
+                    case Intersection(inner):
+                        tys.extend(inner)
 
         current: list[MultiArrow[T]] = [([], ty)]
         while len(current) != 0:

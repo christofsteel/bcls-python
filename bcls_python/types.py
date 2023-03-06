@@ -44,11 +44,7 @@ class Type(ABC, Generic[T]):
     @staticmethod
     def intersect(types: Sequence[Type[T]]) -> Type[T]:
         if len(types) > 0:
-            rtypes = reversed(types)
-            result: Type[T] = next(rtypes)
-            for ty in rtypes:
-                result = Intersection(ty, result)
-            return result
+            return Intersection(*types)
         else:
             return Omega()
 
@@ -214,15 +210,23 @@ class Arrow(Type[T]):
         return Type._parens(result) if prec > arrow_prec else result
 
 
-@dataclass(frozen=True)
 class Intersection(Type[T]):
-    left: Type[T] = field(init=True)
-    right: Type[T] = field(init=True)
+    __match_args__ = ("inner",)
+    inner: frozenset[Type[T]]
     is_omega: bool = field(init=False, compare=False)
     size: int = field(init=False, compare=False)
     organized: set[Type[T]] = field(init=False, compare=False)
 
-    def __post_init__(self) -> None:
+    def __init__(self, *args : Type[T]) -> None:
+        inner : Set[Type[T]] = set()
+        for arg in args:
+            if isinstance(arg, Intersection):
+                inner = inner.union(arg.inner)
+            else:
+                inner.add(arg)
+
+        self.inner = frozenset(inner)
+
         super().__init__(
             is_omega=self._is_omega(),
             size=self._size(),
@@ -230,25 +234,28 @@ class Intersection(Type[T]):
         )
 
     def _is_omega(self) -> bool:
-        return self.left.is_omega and self.right.is_omega
+        return all(subformula.is_omega for subformula in self.inner)
 
     def _size(self) -> int:
-        return 1 + self.left.size + self.right.size
+        return 1 + sum(subformula.size for subformula in self.inner)
 
     def _organized(self) -> set[Type[T]]:
-        return set.union(self.left.organized, self.right.organized)
+        return set.union(*(subformula.organized for subformula in self.inner))
 
     def _str_prec(self, prec: int) -> str:
         intersection_prec: int = 10
 
         def intersection_str_prec(other: Type[T]) -> str:
             match other:
-                case Intersection(_, _):
+                case Intersection(_):
                     return other._str_prec(intersection_prec)
                 case _:
                     return other._str_prec(intersection_prec + 1)
 
         result: str = (
-            f"{intersection_str_prec(self.left)} & {intersection_str_prec(self.right)}"
+            " & ".join(intersection_str_prec(subformula) for subformula in self.inner)
         )
         return Type._parens(result) if prec > intersection_prec else result
+
+    def __hash__(self) -> int:
+        return hash((Intersection, self.inner))
