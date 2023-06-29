@@ -65,6 +65,8 @@ class FiniteCombinatoryLogic(Generic[T, C]):
                 )
             else:
                 instantiated_repository[combinator] = pi_or_type
+        for literal in literals:
+            instantiated_repository[literal.value] = literal
         return instantiated_repository
 
     @staticmethod

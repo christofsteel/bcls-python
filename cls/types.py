@@ -341,6 +341,9 @@ class Pi(Generic[T]):
         for subst in all_substitutions:
             instance = self.instantiate(subst)
             if instance is not None:
+                for parameter in reversed(self.parameters):
+                    instance = Arrow(subst[parameter[0]], instance)
+
                 output.append(instance)
 
         return output

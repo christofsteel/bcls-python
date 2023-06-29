@@ -2,8 +2,8 @@ from cls import inhabit_and_interpret
 from cls.types import Literal, Pi, Constructor, Arrow, TVar
 
 
-def X(y):
-    return f"X({y})"
+def X(a, b, y):
+    return f"X<a={a},b={b}>({y})"
 
 
 def Y():
