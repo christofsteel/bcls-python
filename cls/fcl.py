@@ -7,7 +7,7 @@ from typing import Callable, Generic, TypeAlias, TypeVar
 
 from .combinatorics import maximal_elements, minimal_covers, partition
 from .subtypes import Subtypes
-from .types import Arrow, Intersection, Type
+from .types import Arrow, Intersection, Literal, Pi, Type
 
 T = TypeVar("T", bound=Hashable, covariant=True)
 C = TypeVar("C")
@@ -37,12 +37,35 @@ def mstr(m: MultiArrow[T]) -> tuple[str, str]:
 
 
 class FiniteCombinatoryLogic(Generic[T, C]):
-    def __init__(self, repository: Mapping[C, Type[T]], subtypes: Subtypes[T]):
+    def __init__(
+        self,
+        repository: Mapping[C, Pi[T] | Type[T]],
+        literals: Sequence[Literal[T]],
+        subtypes: Subtypes[T],
+    ):
+        instantiated_repository = FiniteCombinatoryLogic._instantiate(
+            repository, literals
+        )
+
         self.repository: Mapping[C, list[list[MultiArrow[T]]]] = {
             c: list(FiniteCombinatoryLogic._function_types(ty))
-            for c, ty in repository.items()
+            for c, ty in instantiated_repository.items()
         }
         self.subtypes = subtypes
+
+    @staticmethod
+    def _instantiate(
+        repository: Mapping[C, Pi[T] | Type[T]], literals: Sequence[Literal[T]]
+    ) -> Mapping[C, Type[T]]:
+        instantiated_repository = {}
+        for combinator, pi_or_type in repository.items():
+            if isinstance(pi_or_type, Pi):
+                instantiated_repository[combinator] = reduce(
+                    Intersection, pi_or_type.instantiate_all(literals)
+                )
+            else:
+                instantiated_repository[combinator] = pi_or_type
+        return instantiated_repository
 
     @staticmethod
     def _function_types(ty: Type[T]) -> Iterable[list[MultiArrow[T]]]:
@@ -90,48 +113,6 @@ class FiniteCombinatoryLogic(Generic[T, C]):
             map(self.subtypes.check_subtype, args1, args2)
         )
         return maximal_elements(intersected_args, compare_args)
-
-    #    def _combine_arguments(
-    #        self,
-    #        positive_arguments: list[list[Type[T]]],
-    #        negative_arguments: list[list[Type[T]]],
-    #    ) -> list[list[Clause[T]]]:
-    #        result: deque[list[deque[Type[T]]]] = deque()
-    #        for pos in positive_arguments:
-    #            result.append(list(map(lambda ty: deque((ty,)), pos)))
-    #        for neg in negative_arguments:
-    #            new_result: deque[list[deque[Type[T]]]] = deque()
-    #            for i in range(len(neg)):
-    #                for args in result:
-    #                    new_args = args.copy()
-    #                    new_args[i] = new_args[i].copy()
-    #                    new_args[i].append(neg[i])
-    #                    new_result.append(new_args)
-    #            result = new_result
-    #        return list(
-    #            list(map(FiniteCombinatoryLogic.list_of_types_to_clause, args))
-    #            for args in result
-    #        )
-    #
-    #    def boolean_to_clauses(self, target: BooleanTerm[Type[T]]) -> list[Clause[T]]:
-    #        dnf = minimal_dnf_as_list(target)
-    #
-    #        clauses: list[Clause[T]] = []
-    #
-    #        for encoded_clause in dnf:
-    #            encoded_negatives, encoded_positives = partition(
-    #                lambda lit: lit[0], encoded_clause
-    #            )
-    #            positives = [lit[1] for lit in encoded_positives]
-    #            negatives = [lit[1] for lit in encoded_negatives]
-    #
-    #            positive_intersection = (
-    #                Omega() if len(positives) == 0 else reduce(Intersection, positives)
-    #            )
-    #
-    #            clauses.append((positive_intersection, frozenset(negatives)))
-    #
-    #        return clauses
 
     def inhabit(self, *targets: Type[T]) -> TreeGrammar[T, C]:
         type_targets = deque(targets)

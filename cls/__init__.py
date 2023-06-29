@@ -1,9 +1,9 @@
 from collections import deque
-from collections.abc import Hashable, Iterable, Mapping, MutableMapping
+from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequence
 from typing import Any, Optional, TypeVar
 
 from .subtypes import Subtypes
-from .types import Type, Omega, Constructor, Product, Arrow, Intersection
+from .types import Literal, Type, Omega, Constructor, Product, Arrow, Intersection
 from .enumeration import enumerate_terms, interpret_term, enumerate_terms_of_size
 from .fcl import FiniteCombinatoryLogic
 
@@ -31,9 +31,10 @@ def inhabit_and_interpret(
     query: list[Type[T]] | Type[T],
     max_count: Optional[int] = 100,
     subtypes: Optional[Subtypes[T]] = None,
+    literals: Sequence[Literal[T]] = [],
 ) -> Iterable[Any]:
     fcl = FiniteCombinatoryLogic(
-        repository, Subtypes(dict()) if subtypes is None else subtypes
+        repository, literals, Subtypes(dict()) if subtypes is None else subtypes
     )
 
     if not isinstance(query, list):
