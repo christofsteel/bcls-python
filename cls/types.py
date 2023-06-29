@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import itertools
 from abc import ABC, abstractmethod
-from collections.abc import Hashable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Optional, TypeVar
+
+from cls.combinatorics import dict_product
 
 T = TypeVar("T", bound=Hashable, covariant=True)
 
@@ -258,3 +260,106 @@ class Intersection(Type[T]):
             f"{intersection_str_prec(self.left)} & {intersection_str_prec(self.right)}"
         )
         return Type._parens(result) if prec > intersection_prec else result
+
+
+@dataclass(frozen=True)
+class Literal(Type[T]):
+    value: Any
+    type: Any
+
+    is_omega: bool = field(init=False, compare=False)
+    size: int = field(init=False, compare=False)
+    organized: set[Type[T]] = field(init=False, compare=False)
+
+    def __post_init__(self) -> None:
+        super().__init__(
+            is_omega=self._is_omega(), size=self._size(), organized=self._organized()
+        )
+
+    def _is_omega(self) -> bool:
+        return False
+
+    def _size(self) -> int:
+        return 1
+
+    def _organized(self) -> set[Type[T]]:
+        return {self}
+
+    def _str_prec(self, prec: int) -> str:
+        return f"{str(self.value)}^{str(self.type)}"
+
+
+@dataclass(frozen=True)
+class TVar(Type[T]):
+    name: str
+
+    is_omega: bool = field(init=False, compare=False)
+    size: int = field(init=False, compare=False)
+    organized: set[Type[T]] = field(init=False, compare=False)
+
+    def __post_init__(self) -> None:
+        super().__init__(
+            is_omega=self._is_omega(), size=self._size(), organized=self._organized()
+        )
+
+    def _is_omega(self) -> bool:
+        return False
+
+    def _size(self) -> int:
+        return 1
+
+    def _organized(self) -> set[Type[T]]:
+        return {self}
+
+    def _str_prec(self, prec: int) -> str:
+        return f"[{str(self.name)}]"
+
+
+@dataclass(frozen=True)
+class Pi(Generic[T]):
+    parameters: Sequence[tuple[Any, Any]]
+    type: Type[T]
+    predicate: Callable[[Mapping[str, Literal[T]]], bool] = field(
+        default=lambda _: True
+    )
+
+    def instantiate(self, vars: Mapping[str, Literal[T]]) -> Optional[Type[T]]:
+        value_vars = {k: v.value for k, v in vars.items()}
+        if self.predicate(value_vars):
+            return Pi.subst(vars, self.type)
+        return None
+
+    def instantiate_all(self, literals: Iterable[Literal[T]]) -> list[Type[T]]:
+        possible_values = {
+            name: filter(lambda literal: literal.type == typ, literals)
+            for name, typ in self.parameters
+        }
+
+        all_substitutions = dict_product(possible_values)
+
+        output = []
+        for subst in all_substitutions:
+            instance = self.instantiate(subst)
+            if instance is not None:
+                output.append(instance)
+
+        return output
+
+    @staticmethod
+    def subst(vars: Mapping[str, Literal[T]], typ: Type[T]) -> Type[T]:
+        match typ:
+            case Omega():
+                return Omega()
+            case Constructor(name, arg):
+                return Constructor(name, Pi.subst(vars, arg))
+            case Product(left, right):
+                return Product(Pi.subst(vars, left), Pi.subst(vars, right))
+            case Arrow(source, target):
+                return Arrow(Pi.subst(vars, source), Pi.subst(vars, target))
+            case Intersection(left, right):
+                return Intersection(Pi.subst(vars, left), Pi.subst(vars, right))
+            case Literal(_):
+                return typ
+            case TVar(name):
+                return vars[name]
+        return Omega()

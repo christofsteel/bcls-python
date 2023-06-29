@@ -1,14 +1,14 @@
 from collections import deque
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from typing import Generic, TypeVar
 
-from .types import Arrow, Constructor, Intersection, Product, Type
+from .types import Arrow, Constructor, Intersection, Literal, Product, Type
 
 T = TypeVar("T", bound=Hashable, covariant=True)
 
 
 class Subtypes(Generic[T]):
-    def __init__(self, environment: dict[T, set[T]]):
+    def __init__(self, environment: Mapping[T, set[T]]):
         self.environment = self._transitive_closure(
             self._reflexive_closure(environment)
         )
@@ -63,6 +63,14 @@ class Subtypes(Generic[T]):
                 return self._check_subtype_rec(subtypes, l) and self._check_subtype_rec(
                     subtypes, r
                 )
+            case Literal(value, typ):
+                while subtypes:
+                    match subtypes.pop():
+                        case Literal(i_value, i_typ):
+                            if i_value == value and i_typ == typ:
+                                return True
+                return False
+
             case _:
                 raise TypeError(f"Unsupported type in check_subtype: {supertype}")
 
@@ -72,7 +80,7 @@ class Subtypes(Generic[T]):
         return self._check_subtype_rec(deque((subtype,)), supertype)
 
     @staticmethod
-    def _reflexive_closure(env: dict[T, set[T]]) -> dict[T, set[T]]:
+    def _reflexive_closure(env: Mapping[T, set[T]]) -> dict[T, set[T]]:
         all_types: set[T] = set(env.keys())
         for v in env.values():
             all_types.update(v)
