@@ -1,9 +1,26 @@
 from collections import deque
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from itertools import product
 from typing import TypeVar
 
 S = TypeVar("S")  # Type of Sets
 E = TypeVar("E")  # Type of Elements
+K = TypeVar("K")
+
+
+def dict_product(d: Mapping[K, Iterable[E]]) -> list[dict[K, E]]:
+    keys: list[K] = list(d.keys())
+    values: list[Iterable[E]] = [d[key] for key in keys]
+    value_product = product(*values)
+
+    output_list = []
+    for tupl in value_product:
+        output_d: dict[K, E] = {}
+        for idx, key in enumerate(keys):
+            output_d[key] = tupl[idx]
+        output_list.append(output_d)
+
+    return output_list
 
 
 def partition(
