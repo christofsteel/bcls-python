@@ -2,8 +2,8 @@ from cls import inhabit_and_interpret
 from cls.types import Literal, Pi, Constructor, Arrow, TVar
 
 
-def X(a, b, y):
-    return f"X<a={a},b={b}>({y})"
+def X(y):
+    return f"X<a=,b=>({y})"
 
 
 def Y():
@@ -28,6 +28,7 @@ def main():
     for x in l:
         print(f"Query: {query}")
         print(x)
+        break
 
 
 if __name__ == "__main__":

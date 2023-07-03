@@ -12,6 +12,8 @@ from collections import deque
 from collections.abc import Callable, Hashable, Iterable, Mapping
 from typing import Any, Optional, TypeAlias, TypeVar
 
+from cls.fcl import AnnotatedTreeGrammar, TreeGrammar
+
 S = TypeVar("S")  # non-terminals
 T = TypeVar("T", bound=Hashable)
 
@@ -45,7 +47,8 @@ def bounded_union(
 
 def enumerate_terms(
     start: S,
-    grammar: Mapping[S, Iterable[tuple[T, list[S]]]],
+    # grammar: Mapping[S, Iterable[tuple[T, list[S]]]],
+    grammar: AnnotatedTreeGrammar[T, S, None],
     max_count: Optional[int] = 100,
 ) -> Iterable[Tree[T]]:
     """Given a start symbol and a tree grammar, enumerate at most max_count ground terms derivable
@@ -54,7 +57,7 @@ def enumerate_terms(
 
     # accumulator for previously seen terms
     result: set[Tree[T]] = set()
-    terms: dict[S, set[Tree[T]]] = {n: set() for n in grammar.keys()}
+    terms: dict[S, set[Tree[T]]] = {n: set() for n in grammar.non_terminals()}
     terms_size: int = -1
     while terms_size < sum(len(ts) for ts in terms.values()):
         terms_size = sum(len(ts) for ts in terms.values())
@@ -69,7 +72,7 @@ def enumerate_terms(
 
         if max_count is None:
             # new terms are built from previous terms according to grammar
-            terms = {n: new_terms(exprs) for (n, exprs) in grammar.items()}
+            terms = {n: new_terms(exprs) for (n, exprs) in grammar.all_rules()}
         else:
             terms = {
                 n: terms[n]
@@ -77,7 +80,7 @@ def enumerate_terms(
                 else bounded_union(
                     terms[n], sorted(new_terms(exprs), key=tree_size), max_count
                 )
-                for (n, exprs) in grammar.items()
+                for (n, exprs) in grammar.all_rules()
             }
         for term in sorted(terms[start], key=tree_size):
             # yield term if not seen previously

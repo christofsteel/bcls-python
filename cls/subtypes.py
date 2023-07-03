@@ -1,8 +1,8 @@
 from collections import deque
 from collections.abc import Hashable, Mapping
-from typing import Generic, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
-from .types import Arrow, Constructor, Intersection, Literal, Product, Type
+from .types import Arrow, Constructor, Intersection, Literal, Product, TVar, Type
 
 T = TypeVar("T", bound=Hashable, covariant=True)
 
@@ -69,15 +69,34 @@ class Subtypes(Generic[T]):
                         case Literal(i_value, i_typ):
                             if i_value == value and i_typ == typ:
                                 return True
+                        case TVar(v_name, v_typ):
+                            if v_typ == typ:
+                                self.substs[v_name] = supertype 
+                                return True
+                return False
+            case TVar(name, typ):
+                while subtypes:
+                    match subtype := subtypes.pop():
+                        case TVar(v_name, v_typ):
+                            if v_typ == typ:
+                                return True
+                        case Literal(i_value, i_typ):
+                            if i_typ == typ:
+                                self.substs[name] = subtype
+                                return True
                 return False
 
             case _:
                 raise TypeError(f"Unsupported type in check_subtype: {supertype}")
 
-    def check_subtype(self, subtype: Type[T], supertype: Type[T]) -> bool:
+    def check_subtype(self, subtype: Type[T], supertype: Type[T]) -> bool: #Optional[Mapping[str, Literal[T]]]:
         """Decides whether subtype <= supertype."""
 
-        return self._check_subtype_rec(deque((subtype,)), supertype)
+        self.substs = {}
+
+        if self._check_subtype_rec(deque((subtype,)), supertype):
+            return True
+        return False
 
     @staticmethod
     def _reflexive_closure(env: Mapping[T, set[T]]) -> dict[T, set[T]]:

@@ -3,20 +3,53 @@
 from collections import deque
 from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequence
 from functools import reduce
-from typing import Callable, Generic, TypeAlias, TypeVar
+from typing import Any, Callable, Generic, Optional, TypeAlias, TypeVar
 
 from .combinatorics import maximal_elements, minimal_covers, partition
 from .subtypes import Subtypes
-from .types import Arrow, Intersection, Literal, Pi, Type
+from .types import Arrow, Intersection, Literal, Pi, Predicate, TVar, Type
 
 T = TypeVar("T", bound=Hashable, covariant=True)
 C = TypeVar("C")
 
+Ter = TypeVar("Ter")
+NT = TypeVar("NT")
+Ann = TypeVar("Ann")
+
 # ([sigma_1, ..., sigma_n], tau) means sigma_1 -> ... -> sigma_n -> tau
 MultiArrow: TypeAlias = tuple[list[Type[T]], Type[T]]
 
+dict_keys = type({}.keys())
 
 TreeGrammar: TypeAlias = MutableMapping[Type[T], deque[tuple[C, list[Type[T]]]]]
+
+class AnnotatedTreeGrammar(Generic[Ter, NT, Ann]):
+    def __init__(self):
+        self.rules: dict[NT, deque[tuple[Ter, list[NT]]]] = {}
+
+    def add_rule(self, non_terminal : NT, rhs: tuple[Ter, list[NT]]):
+        if non_terminal in self.rules:
+            self.rules[non_terminal].append(rhs)
+        else:
+            self.rules[non_terminal] = deque([rhs])
+
+    def __getitem__(self, non_terminal: NT) -> deque[tuple[Ter, list[NT]]]:
+        return self.rules[non_terminal]
+
+    def __setitem__(self, non_terminal: NT, rhs: deque[tuple[Ter, list[NT]]]):
+        self.rules[non_terminal] = rhs
+
+    def get(self, non_terminal: NT) -> Optional[deque[tuple[Ter, list[NT]]]]:
+        if non_terminal in self.rules:
+            return self[non_terminal]
+        return None
+
+    def non_terminals(self) -> Iterable[NT]:
+        return self.rules.keys()
+
+    def all_rules(self) -> Iterable[tuple[NT, deque[tuple[Ter, list[NT]]]]]:
+        return self.rules.items()
+
 
 
 def show_grammar(grammar: TreeGrammar[T, C]) -> Iterable[str]:
@@ -44,8 +77,12 @@ class FiniteCombinatoryLogic(Generic[T, C]):
         subtypes: Subtypes[T],
     ):
         instantiated_repository = FiniteCombinatoryLogic._instantiate(
-            repository, literals
-        )
+            repository)
+
+        self.metadata : Mapping[C, tuple[Sequence[tuple[Any, Any]], Predicate]] = {
+            k: (pi.parameters, pi.predicate) for k, pi in instantiated_repository.items()
+            }
+        self.literals = literals
 
         self.repository: Mapping[C, list[list[MultiArrow[T]]]] = {
             c: list(FiniteCombinatoryLogic._function_types(ty))
@@ -55,22 +92,18 @@ class FiniteCombinatoryLogic(Generic[T, C]):
 
     @staticmethod
     def _instantiate(
-        repository: Mapping[C, Pi[T] | Type[T]], literals: Sequence[Literal[T]]
-    ) -> Mapping[C, Type[T]]:
+        repository: Mapping[C, Pi[T] | Type[T]]) -> Mapping[C, Pi[T]]:
         instantiated_repository = {}
         for combinator, pi_or_type in repository.items():
             if isinstance(pi_or_type, Pi):
-                instantiated_repository[combinator] = reduce(
-                    Intersection, pi_or_type.instantiate_all(literals)
-                )
+                typed_parameters_subst = { name : TVar(name, typ) for name, typ in pi_or_type.parameters} 
+                instantiated_repository[combinator] = pi_or_type.pi_subst(typed_parameters_subst)
             else:
-                instantiated_repository[combinator] = pi_or_type
-        for literal in literals:
-            instantiated_repository[literal.value] = literal
+                instantiated_repository[combinator] = Pi([], pi_or_type)
         return instantiated_repository
 
     @staticmethod
-    def _function_types(ty: Type[T]) -> Iterable[list[MultiArrow[T]]]:
+    def _function_types(ty: Pi[T]) -> Iterable[list[MultiArrow[T]]]:
         """Presents a type as a list of 0-ary, 1-ary, ..., n-ary function types."""
 
         def unary_function_types(ty: Type[T]) -> Iterable[tuple[Type[T], Type[T]]]:
@@ -82,7 +115,7 @@ class FiniteCombinatoryLogic(Generic[T, C]):
                     case Intersection(sigma, tau):
                         tys.extend((sigma, tau))
 
-        current: list[MultiArrow[T]] = [([], ty)]
+        current: list[MultiArrow[T]] = [([], ty.type)]
         while len(current) != 0:
             yield current
             current = [
@@ -116,19 +149,19 @@ class FiniteCombinatoryLogic(Generic[T, C]):
         )
         return maximal_elements(intersected_args, compare_args)
 
-    def inhabit(self, *targets: Type[T]) -> TreeGrammar[T, C]:
+    def inhabit(self, *targets: Type[T]) -> AnnotatedTreeGrammar[C, Type[T], None]:
         type_targets = deque(targets)
 
         # dictionary of type |-> sequence of combinatory expressions
-        memo: TreeGrammar[T, C] = dict()
+        memo: AnnotatedTreeGrammar[C, Type[T], None] = AnnotatedTreeGrammar()
 
         while type_targets:
             current_target = type_targets.pop()
             if memo.get(current_target) is None:
                 # target type was not seen before
                 # paths: list[Type] = list(target.organized)
-                possibilities: deque[tuple[C, list[Type[T]]]] = deque()
-                memo.update({current_target: possibilities})
+                # possibilities: deque[tuple[C, Predicate, Sequence[tuple[Any, Any]], list[Type[T]]]] = deque()
+                # memo.add_rule(current_target, possibilities)
                 # If the target is omega, then the result is junk
                 if current_target.is_omega:
                     continue
@@ -145,7 +178,9 @@ class FiniteCombinatoryLogic(Generic[T, C]):
                             continue
 
                         for subquery in arguments:
-                            possibilities.append((combinator, subquery))
+                            print(f"SQ: {subquery}")
+                            memo.add_rule(current_target, (combinator, subquery))
+                            # possibilities.append((combinator, self.metadata[combinator][1], self.metadata[combinator][0],subquery))
                             type_targets.extendleft(subquery)
 
         # prune not inhabited types
@@ -154,7 +189,7 @@ class FiniteCombinatoryLogic(Generic[T, C]):
         return memo
 
     @staticmethod
-    def _prune(memo: TreeGrammar[T, C]) -> None:
+    def _prune(memo: AnnotatedTreeGrammar[C, Type[T], Ann]) -> None:
         """Keep only productive grammar rules."""
 
         def is_ground(args: list[Type[T]], ground_types: set[Type[T]]) -> bool:
@@ -165,7 +200,7 @@ class FiniteCombinatoryLogic(Generic[T, C]):
             lambda ty: any(
                 True for (_, args) in memo[ty] if is_ground(args, ground_types)
             ),
-            memo.keys(),
+            memo.non_terminals(),
         )
         # initialize inhabited (ground) types
         while new_ground_types:
@@ -177,7 +212,7 @@ class FiniteCombinatoryLogic(Generic[T, C]):
                 candidates,
             )
 
-        for target, possibilities in memo.items():
+        for target, possibilities in memo.rules.items():
             memo[target] = deque(
                 possibility
                 for possibility in possibilities

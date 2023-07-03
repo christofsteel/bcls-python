@@ -4,12 +4,11 @@ import itertools
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, NewType, Optional, TypeAlias, TypeVar
 
 from cls.combinatorics import dict_product
 
 T = TypeVar("T", bound=Hashable, covariant=True)
-
 
 @dataclass(frozen=True)
 class Type(ABC, Generic[T]):
@@ -292,6 +291,7 @@ class Literal(Type[T]):
 @dataclass(frozen=True)
 class TVar(Type[T]):
     name: str
+    type: Any = field(default=None)
 
     is_omega: bool = field(init=False, compare=False)
     size: int = field(init=False, compare=False)
@@ -314,12 +314,13 @@ class TVar(Type[T]):
     def _str_prec(self, prec: int) -> str:
         return f"[{str(self.name)}]"
 
+Predicate : TypeAlias = Callable[[Mapping[str, Literal[T]]], bool]
 
 @dataclass(frozen=True)
 class Pi(Generic[T]):
     parameters: Sequence[tuple[Any, Any]]
     type: Type[T]
-    predicate: Callable[[Mapping[str, Literal[T]]], bool] = field(
+    predicate: Predicate = field(
         default=lambda _: True
     )
 
@@ -349,7 +350,7 @@ class Pi(Generic[T]):
         return output
 
     @staticmethod
-    def subst(vars: Mapping[str, Literal[T]], typ: Type[T]) -> Type[T]:
+    def subst(vars: Mapping[str, Literal[T] | TVar[T]], typ: Type[T]) -> Type[T]:
         match typ:
             case Omega():
                 return Omega()
@@ -366,3 +367,8 @@ class Pi(Generic[T]):
             case TVar(name):
                 return vars[name]
         return Omega()
+
+    def pi_subst(self, vars: Mapping[str, Literal[T] | TVar[T]]) -> Pi[T]:
+        print(vars)
+        print(self.parameters)
+        return Pi(self.parameters, Pi.subst(vars, self.type), self.predicate)
