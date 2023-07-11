@@ -1,4 +1,8 @@
-from cls import inhabit_and_interpret
+from collections import deque
+from cls import inhabit_and_interpret, FiniteCombinatoryLogic
+from cls.enumeration import enumerate_terms, interpret_term
+from cls.fcl import AnnotatedRHS
+from cls.subtypes import Subtypes
 from cls.types import Literal, Pi, Constructor, Arrow, TVar
 
 
@@ -24,10 +28,12 @@ def main():
 
     query = Constructor("c", Literal(5, int))
 
-    l = inhabit_and_interpret(Gamma, query, literals=Delta)
-    for x in l:
+    # l = inhabit_and_interpret(Gamma, query, literals=Delta)
+    l = FiniteCombinatoryLogic(Gamma, Delta, Subtypes({})).inhabit(query)
+    print(l.show())
+    for x in enumerate_terms(query, l):
         print(f"Query: {query}")
-        print(x)
+        print(interpret_term(x))
         break
 
 

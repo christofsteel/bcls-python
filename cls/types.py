@@ -1,14 +1,25 @@
 from __future__ import annotations
+from collections import deque
 
 import itertools
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, NewType, Optional, TypeAlias, TypeVar
+from typing import (
+    Any,
+    Generic,
+    NewType,
+    Optional,
+    TypeAlias,
+    TypeVar,
+    cast,
+    reveal_type,
+)
 
-from cls.combinatorics import dict_product
+from .combinatorics import dict_product, partition
 
 T = TypeVar("T", bound=Hashable, covariant=True)
+
 
 @dataclass(frozen=True)
 class Type(ABC, Generic[T]):
@@ -36,6 +47,10 @@ class Type(ABC, Generic[T]):
 
     @abstractmethod
     def _str_prec(self, prec: int) -> str:
+        pass
+
+    @abstractmethod
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
         pass
 
     @staticmethod
@@ -80,6 +95,9 @@ class Omega(Type[T]):
             organized=self._organized(),
         )
 
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        return self
+
     def _is_omega(self) -> bool:
         return True
 
@@ -107,6 +125,9 @@ class Constructor(Type[T]):
             size=self._size(),
             organized=self._organized(),
         )
+
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        return Constructor(self.name, self.arg.subst(name, val))
 
     def _is_omega(self) -> bool:
         return False
@@ -141,6 +162,9 @@ class Product(Type[T]):
             size=self._size(),
             organized=self._organized(),
         )
+
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        return Product(self.left.subst(name, val), self.right.subst(name, val))
 
     def _is_omega(self) -> bool:
         return False
@@ -190,6 +214,9 @@ class Arrow(Type[T]):
             organized=self._organized(),
         )
 
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        return Arrow(self.source.subst(name, val), self.target.subst(name, val))
+
     def _is_omega(self) -> bool:
         return self.target.is_omega
 
@@ -236,6 +263,9 @@ class Intersection(Type[T]):
             organized=self._organized(),
         )
 
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        return Intersection(self.left.subst(name, val), self.right.subst(name, val))
+
     def _is_omega(self) -> bool:
         return self.left.is_omega and self.right.is_omega
 
@@ -275,6 +305,9 @@ class Literal(Type[T]):
             is_omega=self._is_omega(), size=self._size(), organized=self._organized()
         )
 
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        return self
+
     def _is_omega(self) -> bool:
         return False
 
@@ -285,7 +318,7 @@ class Literal(Type[T]):
         return {self}
 
     def _str_prec(self, prec: int) -> str:
-        return f"{str(self.value)}^{str(self.type)}"
+        return f"{str(self.value)}@{str(self.type)}"
 
 
 @dataclass(frozen=True)
@@ -302,6 +335,12 @@ class TVar(Type[T]):
             is_omega=self._is_omega(), size=self._size(), organized=self._organized()
         )
 
+    def subst(self, name: str, val: Type[T]) -> Type[T]:
+        if self.name == name:
+            return val
+        else:
+            return self
+
     def _is_omega(self) -> bool:
         return False
 
@@ -312,63 +351,61 @@ class TVar(Type[T]):
         return {self}
 
     def _str_prec(self, prec: int) -> str:
-        return f"[{str(self.name)}]"
+        return f"<{str(self.name)}@{self.type}>"
 
-Predicate : TypeAlias = Callable[[Mapping[str, Literal[T]]], bool]
+
+Predicate: TypeAlias = Callable[[Mapping[str, Literal[T]]], bool]
+
 
 @dataclass(frozen=True)
 class Pi(Generic[T]):
-    parameters: Sequence[tuple[Any, Any]]
-    type: Type[T]
-    predicate: Predicate = field(
-        default=lambda _: True
-    )
+    parameter: tuple[str, Any]
+    type: Type[T] | Pi[T]
+    predicate: Predicate = field(default=lambda _: True)
 
-    def instantiate(self, vars: Mapping[str, Literal[T]]) -> Optional[Type[T]]:
-        value_vars = {k: v.value for k, v in vars.items()}
-        if self.predicate(value_vars):
-            return Pi.subst(vars, self.type)
-        return None
+    def instantiate(self, literal: Literal[T]) -> Pi[T] | Type[T]:
+        return self.type.subst(self.parameter[0], literal)
 
-    def instantiate_all(self, literals: Iterable[Literal[T]]) -> list[Type[T]]:
-        possible_values = {
-            name: filter(lambda literal: literal.type == typ, literals)
-            for name, typ in self.parameters
-        }
+    def subst(self, name: str, val: Type[T]) -> Pi[T]:
+        return Pi(self.parameter, self.type.subst(name, val), self.predicate)
 
-        all_substitutions = dict_product(possible_values)
+    def multi_instantiate(
+        self, literals: Iterable[Literal[T]]
+    ) -> Iterable[Pi[T] | Type[T]]:
+        return map(lambda lit: self.instantiate(lit), literals)
 
-        output = []
-        for subst in all_substitutions:
-            instance = self.instantiate(subst)
-            if instance is not None:
-                for parameter in reversed(self.parameters):
-                    instance = Arrow(subst[parameter[0]], instance)
+    def parameter_compatible(self, lit: Literal[T]) -> bool:
+        return lit.type == self.parameter[1]
 
-                output.append(instance)
+    def guard_multi_instantiate(
+        self, literals: Iterable[Literal[T]]
+    ) -> Iterable[Pi[T] | Type[T]]:
+        return self.multi_instantiate(filter(self.parameter_compatible, literals))
 
-        return output
+    def multi_instantiate_all_rec(
+        self, literals: Iterable[Literal[T]]
+    ) -> Iterable[Type[T]]:
+        instantiated = self.guard_multi_instantiate(literals)
+
+        pis, types = partition(lambda ty: isinstance(ty, Type), instantiated)
+
+        # at most one of `pi` and `types` can hold elements
+
+        for pi in pis:
+            types.extend(cast(Pi[T], pi).multi_instantiate_all_rec(literals))
+
+        return cast(Iterable[Type[T]], types)
+
+    def __str__(self):
+        return f"Pi<{self.parameter}>.{self.type}"
 
     @staticmethod
-    def subst(vars: Mapping[str, Literal[T] | TVar[T]], typ: Type[T]) -> Type[T]:
-        match typ:
-            case Omega():
-                return Omega()
-            case Constructor(name, arg):
-                return Constructor(name, Pi.subst(vars, arg))
-            case Product(left, right):
-                return Product(Pi.subst(vars, left), Pi.subst(vars, right))
-            case Arrow(source, target):
-                return Arrow(Pi.subst(vars, source), Pi.subst(vars, target))
-            case Intersection(left, right):
-                return Intersection(Pi.subst(vars, left), Pi.subst(vars, right))
-            case Literal(_):
-                return typ
-            case TVar(name):
-                return vars[name]
-        return Omega()
-
-    def pi_subst(self, vars: Mapping[str, Literal[T] | TVar[T]]) -> Pi[T]:
-        print(vars)
-        print(self.parameters)
-        return Pi(self.parameters, Pi.subst(vars, self.type), self.predicate)
+    def multi(
+        parameters: Sequence[tuple[str, Any]],
+        typ: Type[T] | Pi[T],
+        predicate: Predicate = lambda _: True,
+    ) -> Pi[T]:
+        if len(parameters) > 1:
+            return Pi(parameters[0], Pi.multi(parameters[1:], typ, predicate))
+        else:
+            return Pi(parameters[0], typ, predicate)

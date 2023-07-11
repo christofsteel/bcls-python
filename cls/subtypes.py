@@ -71,7 +71,7 @@ class Subtypes(Generic[T]):
                                 return True
                         case TVar(v_name, v_typ):
                             if v_typ == typ:
-                                self.substs[v_name] = supertype 
+                                self.substs[v_name] = supertype
                                 return True
                 return False
             case TVar(name, typ):
@@ -80,16 +80,14 @@ class Subtypes(Generic[T]):
                         case TVar(v_name, v_typ):
                             if v_typ == typ:
                                 return True
-                        case Literal(i_value, i_typ):
-                            if i_typ == typ:
-                                self.substs[name] = subtype
-                                return True
                 return False
 
             case _:
                 raise TypeError(f"Unsupported type in check_subtype: {supertype}")
 
-    def check_subtype(self, subtype: Type[T], supertype: Type[T]) -> bool: #Optional[Mapping[str, Literal[T]]]:
+    def check_subtype(
+        self, subtype: Type[T], supertype: Type[T]
+    ) -> bool:  # Optional[Mapping[str, Literal[T]]]:
         """Decides whether subtype <= supertype."""
 
         self.substs = {}

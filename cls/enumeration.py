@@ -12,7 +12,7 @@ from collections import deque
 from collections.abc import Callable, Hashable, Iterable, Mapping
 from typing import Any, Optional, TypeAlias, TypeVar
 
-from cls.fcl import AnnotatedTreeGrammar, TreeGrammar
+from cls.fcl import AnnotatedRHS, AnnotatedTreeGrammar, TreeGrammar
 
 S = TypeVar("S")  # non-terminals
 T = TypeVar("T", bound=Hashable)
@@ -63,11 +63,11 @@ def enumerate_terms(
         terms_size = sum(len(ts) for ts in terms.values())
 
         new_terms: Callable[
-            [Iterable[tuple[T, list[S]]]], set[Tree[T]]
+            [Iterable[AnnotatedRHS[T, S, None]]], set[Tree[T]]
         ] = lambda exprs: {
-            (c, tuple(args))
-            for (c, ms) in exprs
-            for args in itertools.product(*(terms[m] for m in ms))
+            (rhs.terminal, tuple(args))
+            for rhs in exprs
+            for args in itertools.product(*(terms[m] for m in rhs.args))
         }
 
         if max_count is None:
