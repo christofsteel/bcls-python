@@ -1,5 +1,7 @@
-# (Boolean enhanced) Combinatory Logic Synthesis in Python
+# This project is archived!
+Please see [cls-python](https://github.com/tudo-seal/cls-python), [bcls-python](https://github.com/tudo-seal/bcls-python) and [picls-python](https://github.com/tudo-seal/picls-python) for current development.
 
+# (Boolean enhanced) Combinatory Logic Synthesis in Python
 This repository is a fork of [cls-python](https://github.com/cls-python/cls-python), that extends
 the query language of CLS to Boolean queries.
 
